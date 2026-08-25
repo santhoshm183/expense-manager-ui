@@ -30,17 +30,18 @@ const money = (value: number) =>
         maximumFractionDigits: 0,
     }).format(value);
 
-export default function AuctionManager() {
+export default function AuctionManager({ initialChitId }: { initialChitId: string }) {
     const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
     const [chits, setChits] = useState<Chit[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
     const [auctions, setAuctions] = useState<Auction[]>([]);
-    const [chitId, setChitId] = useState("all");
+    const [chitId, setChitId] = useState(initialChitId);
     const [formChitId, setFormChitId] = useState("");
     const [extraHand, setExtraHand] = useState(false);
     const [editing, setEditing] = useState<Auction | null>(null);
     const [showForm, setShowForm] = useState(false);
     const [error, setError] = useState("");
+    useEffect(() => { if (initialChitId) setChitId(initialChitId); }, [initialChitId]);
     useEffect(() => {
         Promise.all([fetch(`${baseUrl}/chits`), fetch(`${baseUrl}/members`)])
             .then(async ([chitsResponse, membersResponse]) => {

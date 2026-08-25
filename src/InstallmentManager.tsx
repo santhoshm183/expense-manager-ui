@@ -8,17 +8,18 @@ type Installment = { id: string; chitId: string; chitName: string; memberId: str
 
 const money = (value: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
 
-export default function InstallmentManager() {
+export default function InstallmentManager({ initialChitId }: { initialChitId: string }) {
     const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
     const [chits, setChits] = useState<Chit[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
     const [installments, setInstallments] = useState<Installment[]>([]);
-    const [chitId, setChitId] = useState("all");
+    const [chitId, setChitId] = useState(initialChitId);
     const [memberId, setMemberId] = useState("all");
     const [formChitId, setFormChitId] = useState("");
     const [showForm, setShowForm] = useState(false);
     const [editingInstallment, setEditingInstallment] = useState<Installment | null>(null);
     const [error, setError] = useState("");
+    useEffect(() => { if (initialChitId) { setChitId(initialChitId); setMemberId("all"); } }, [initialChitId]);
 
     useEffect(() => {
         Promise.all([fetch(`${baseUrl}/chits`), fetch(`${baseUrl}/members`)]).then(async ([chitsResponse, membersResponse]) => {
@@ -29,7 +30,7 @@ export default function InstallmentManager() {
     }, []);
     useEffect(() => {
         const params = new URLSearchParams();
-        if (chitId !== "all") params.set("chitId", chitId);
+        if (chitId && chitId !== "all") params.set("chitId", chitId);
         if (memberId !== "all") params.set("memberId", memberId);
         fetch(`${baseUrl}/installments?${params}`).then((response) => { if (!response.ok) throw new Error(); return response.json(); }).then(setInstallments).catch(() => setError("Could not load installments."));
     }, [chitId, memberId]);
@@ -42,6 +43,7 @@ export default function InstallmentManager() {
         if (!response.ok) { setError("The installment could not be added."); return; }
         const created = await response.json() as Installment;
         setInstallments((items) => editingInstallment ? items.map((item) => item.id === created.id ? created : item) : [created, ...items]);
+        window.dispatchEvent(new Event("installment-changed"));
         setShowForm(false);
         setEditingInstallment(null);
         setError("");
@@ -51,6 +53,7 @@ export default function InstallmentManager() {
         const response = await fetch(`${baseUrl}/installments/${installment.id}`, { method: "DELETE" });
         if (!response.ok) { setError("The installment could not be deleted."); return; }
         setInstallments((items) => items.filter((item) => item.id !== installment.id));
+        window.dispatchEvent(new Event("installment-changed"));
     }
     return <>
         {error && <div className="api-notice">{error}</div>}

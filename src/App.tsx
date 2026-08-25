@@ -53,6 +53,17 @@ type Member = {
     chit?: { id: string; name: string };
     chitTaken: boolean;
 };
+type ChitDashboard = {
+    chitId: string;
+    totalCollectionOfMonth: number;
+    availableBalance: number;
+    membersNotPaid: number;
+    latestHand: number | null;
+    handsReleased: number;
+    extraHands: number;
+    amountDistributed: number;
+    agentCommission: number;
+};
 
 const money = (value: number) =>
     new Intl.NumberFormat("en-IN", {
@@ -559,22 +570,31 @@ function ChitManager() {
     const [editingChit, setEditingChit] = useState<Chit | null>(null);
     const [showMember, setShowMember] = useState(false);
     const [editingMember, setEditingMember] = useState<Member | null>(null);
-    const [memberChitFilter, setMemberChitFilter] = useState("all");
+    const [selectedChitId, setSelectedChitId] = useState("");
+    const [dashboard, setDashboard] = useState<ChitDashboard | null>(null);
     const [error, setError] = useState("");
     useEffect(() => {
-        Promise.all([fetch(`${baseUrl}/chits`), fetch(`${baseUrl}/members`)])
-            .then(async ([chitsResponse, membersResponse]) => {
-                if (!chitsResponse.ok || !membersResponse.ok) throw new Error();
-                setChits(await chitsResponse.json());
-                setMembers(await membersResponse.json());
-            })
+        fetch(`${baseUrl}/chits`)
+            .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
+            .then(setChits)
             .catch(() => setError("Could not connect to the Chit Manager API."));
     }, []);
     useEffect(() => {
-        const url =
-            memberChitFilter === "all"
-                ? `${baseUrl}/members`
-                : `${baseUrl}/members?chitId=${memberChitFilter}`;
+        if (!selectedChitId && chits.length) setSelectedChitId(chits[0].id);
+    }, [chits, selectedChitId]);
+    useEffect(() => {
+        if (!selectedChitId) return;
+        const loadSummary = () => fetch(`${baseUrl}/chits/${selectedChitId}/summary`)
+            .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
+            .then(setDashboard)
+            .catch(() => setError("Could not load the selected chit dashboard."));
+        loadSummary();
+        window.addEventListener("installment-changed", loadSummary);
+        return () => window.removeEventListener("installment-changed", loadSummary);
+    }, [selectedChitId]);
+    useEffect(() => {
+        if (tab !== "members" || !selectedChitId) return;
+        const url = `${baseUrl}/members?chitId=${selectedChitId}`;
         fetch(url)
             .then((response) => {
                 if (!response.ok) throw new Error();
@@ -582,8 +602,7 @@ function ChitManager() {
             })
             .then(setMembers)
             .catch(() => setError("Could not load members for this chit."));
-    }, [memberChitFilter]);
-    const total = chits.reduce((sum, chit) => sum + chit.totalAmount, 0);
+    }, [tab, selectedChitId]);
     async function submitChit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         const data = Object.fromEntries(new FormData(event.currentTarget));
@@ -660,7 +679,7 @@ function ChitManager() {
             <div className="page-heading">
                 <div>
                     <p className="section-kicker">GROUP SAVINGS WORKSPACE</p>
-                    <h2>Chit Manager</h2>
+                    <h2>Chit Manager{chits.find((chit) => chit.id === selectedChitId) && <span className="selected-chit-name"> / {chits.find((chit) => chit.id === selectedChitId)?.name}</span>}</h2>
                 </div>
                 <div className="heading-controls">
                     <button
@@ -681,14 +700,14 @@ function ChitManager() {
             </div>
             <div className="summary-grid">
                 <Card
-                    label="Total collection"
-                    value={total}
+                    label="Total collection of the month"
+                    value={dashboard?.totalCollectionOfMonth ?? 0}
                     icon={<HandCoins />}
                     tone="green"
                 />
                 <Card
                     label="Available balance"
-                    value={total}
+                    value={dashboard?.availableBalance ?? 0}
                     icon={<WalletCards />}
                     tone="blue"
                 />
@@ -699,8 +718,8 @@ function ChitManager() {
                     tone="yellow"
                 />
                 <Card
-                    label="Members onboarded"
-                    value={members.length}
+                    label="Members not paid"
+                    value={dashboard?.membersNotPaid ?? 0}
                     icon={<Users />}
                     tone="coral"
                 />
@@ -736,7 +755,7 @@ function ChitManager() {
                     <section className="chit-list">
                         {chits.length ? (
                             chits.map((chit) => (
-                                <div className="chit-card" key={chit.id}>
+                                <div className={chit.id === selectedChitId ? "chit-card selected" : "chit-card"} key={chit.id} onClick={() => setSelectedChitId(chit.id)} role="button" tabIndex={0}>
                                     <div className="chit-card-top">
                                         <div className="chit-avatar">
                                             {chit.name.slice(0, 1).toUpperCase()}
@@ -776,19 +795,19 @@ function ChitManager() {
                         <div className="detail-facts">
                             <div>
                                 <span>Hands released</span>
-                                <strong>0</strong>
+                                <strong>{dashboard?.handsReleased ?? 0}</strong>
                             </div>
                             <div>
                                 <span>Extra hands</span>
-                                <strong>0</strong>
+                                <strong>{dashboard?.extraHands ?? 0}</strong>
                             </div>
                             <div>
                                 <span>Amount distributed</span>
-                                <strong>{money(0)}</strong>
+                                <strong>{money(dashboard?.amountDistributed ?? 0)}</strong>
                             </div>
                             <div>
-                                <span>Active chits</span>
-                                <strong>{chits.length}</strong>
+                                <span>Agent commission</span>
+                                <strong>{money(dashboard?.agentCommission ?? 0)}</strong>
                             </div>
                         </div>
                         <div className="profit-box">
@@ -812,8 +831,7 @@ function ChitManager() {
                         </div>
                         <label className="member-filter">
                             <span>Chit</span>
-                            <select value={memberChitFilter} onChange={(event) => setMemberChitFilter(event.target.value)}>
-                                <option value="all">All chits</option>
+                            <select value={selectedChitId} onChange={(event) => setSelectedChitId(event.target.value)}>
                                 {chits.map((chit) => <option value={chit.id} key={chit.id}>{chit.name}</option>)}
                             </select>
                         </label>
@@ -842,7 +860,7 @@ function ChitManager() {
                         </div>
                     )}
                 </section>
-            ) : tab === "installments" ? <InstallmentManager /> : <AuctionManager />}
+            ) : tab === "installments" ? <InstallmentManager initialChitId={selectedChitId} /> : <AuctionManager initialChitId={selectedChitId} />}
             {showChit && (
                 <Modal title={editingChit ? "Edit chit" : "Create a chit"} close={() => { setShowChit(false); setEditingChit(null); }}>
                     <form className="form" onSubmit={submitChit}>
@@ -890,7 +908,7 @@ function ChitManager() {
                     <form className="form" onSubmit={submitMember}>
                         <label>
                             Chit name
-                            <select name="chitId" defaultValue={editingMember?.chit?.id || (memberChitFilter === "all" ? "" : memberChitFilter)} required>
+                            <select name="chitId" defaultValue={editingMember?.chit?.id || selectedChitId} required>
                                 <option value="" disabled>Select a chit</option>
                                 {chits.map((chit) => <option value={chit.id} key={chit.id}>{chit.name}</option>)}
                             </select>

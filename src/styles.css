@@ -1422,3 +1422,8 @@ body {
 .auction-values strong {
     color: var(--green)
 }
+
+.selected-chit-name {
+    color: var(--green);
+    font-size: 20px
+}
