@@ -675,6 +675,30 @@ body {
     margin: 9px 0 13px
 }
 
+.card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px
+}
+
+.card-actions button,
+.member-actions button {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px;
+    font: 600 11px inherit;
+    cursor: pointer
+}
+
+.card-actions button:hover,
+.member-actions button:hover {
+    color: var(--green)
+}
+
 .progress {
     height: 4px;
     background: #edf0ed;
@@ -878,6 +902,47 @@ body {
     font-weight: 600
 }
 
+.toggle-field {
+    display: flex !important;
+    align-items: center;
+    gap: 10px !important
+}
+
+.toggle-button {
+    width: 72px;
+    height: 32px;
+    border: 1px solid #d7e0d9;
+    border-radius: 18px;
+    background: #edf1ee;
+    color: #7b8880;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 3px 8px 3px 4px;
+    cursor: pointer;
+    transition: background .2s ease, color .2s ease
+}
+
+.toggle-button.on {
+    background: var(--green);
+    border-color: var(--green);
+    color: #fff;
+    flex-direction: row-reverse;
+    padding: 3px 4px 3px 8px
+}
+
+.toggle-button strong {
+    font-size: 10px
+}
+
+.toggle-knob {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px #263c2d26
+}
+
 .form input,
 .form select,
 .form textarea {
@@ -902,6 +967,38 @@ body {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px
+}
+
+.member-row-button {
+    width: 100%;
+    border-top: 0;
+    border-left: 0;
+    border-right: 0;
+    background: #fff;
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer
+}
+
+.member-row-button:hover {
+    background: #f7faf7
+}
+
+.member-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 11px
+}
+
+.member-filter select {
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 7px 9px;
+    color: var(--ink);
+    background: #fff;
+    font: 600 12px inherit
 }
 
 .submit-button {
@@ -1168,4 +1265,160 @@ body {
         border-radius: 14px 14px 0 0;
         max-height: 94vh
     }
+}
+
+.tab-bar {
+    display: flex;
+    gap: 22px;
+    border-bottom: 1px solid var(--line);
+    margin: 4px 0 18px
+}
+
+.tab {
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    padding: 10px 2px;
+    font: 600 12px inherit;
+    cursor: pointer
+}
+
+.tab.active {
+    color: var(--green);
+    border-bottom-color: var(--green)
+}
+
+.members-panel {
+    min-height: 320px
+}
+
+.person-row {
+    min-height: 70px;
+    padding: 10px 21px;
+    border-bottom: 1px solid #edf0ed;
+    display: flex;
+    align-items: center;
+    gap: 12px
+}
+
+.person-row>div:nth-child(2) {
+    flex: 1
+}
+
+.person-row strong,
+.person-row span {
+    display: block
+}
+
+.person-row strong {
+    font-size: 13px
+}
+
+.member-state {
+    color: var(--muted);
+    font-size: 11px
+}
+
+.installments-panel {
+    min-height: 320px
+}
+
+.installment-filters {
+    display: flex;
+    gap: 10px
+}
+
+.installment-filters label {
+    display: grid;
+    gap: 4px;
+    color: var(--muted);
+    font-size: 10px
+}
+
+.installment-filters select {
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 7px 9px;
+    color: var(--ink);
+    background: #fff;
+    font: 600 12px inherit
+}
+
+.installment-row {
+    min-height: 70px;
+    padding: 10px 21px;
+    border-bottom: 1px solid #edf0ed;
+    display: flex;
+    align-items: center;
+    gap: 12px
+}
+
+.installment-row>div:nth-child(2) {
+    flex: 1
+}
+
+.installment-row strong,
+.installment-row span {
+    display: block
+}
+
+.installment-row span {
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 4px
+}
+
+.installment-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    display: grid;
+    place-items: center;
+    background: var(--mint);
+    color: var(--green)
+}
+
+.field-hint {
+    color: var(--muted);
+    font-size: 11px
+}
+
+.auction-panel {
+    min-height: 320px
+}
+
+.auction-row {
+    min-height: 76px;
+    padding: 10px 21px;
+    border-bottom: 1px solid #edf0ed;
+    display: flex;
+    align-items: center;
+    gap: 12px
+}
+
+.auction-row>div:nth-child(2) {
+    min-width: 145px
+}
+
+.auction-row strong,
+.auction-row span {
+    display: block
+}
+
+.auction-row span {
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 4px
+}
+
+.auction-values {
+    display: flex;
+    gap: 13px;
+    align-items: center;
+    margin-left: auto
+}
+
+.auction-values strong {
+    color: var(--green)
 }
