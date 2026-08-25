@@ -384,6 +384,22 @@ export default function App() {
                     )}
                 </div>
             </main>
+            <nav className="mobile-nav" aria-label="Main navigation">
+                <button
+                    className={view === "expenses" ? "selected" : ""}
+                    onClick={() => setView("expenses")}
+                >
+                    <Receipt size={18} />
+                    Expenses
+                </button>
+                <button
+                    className={view === "chits" ? "selected" : ""}
+                    onClick={() => setView("chits")}
+                >
+                    <HandCoins size={18} />
+                    Chit Manager
+                </button>
+            </nav>
             {showForm && (
                 <Modal
                     title={editing ? "Edit transaction" : "Add transaction"}
