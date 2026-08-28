@@ -7,4 +7,4 @@ npm install
 npm run dev
 ```
 
-The default API URL is `http://localhost:8080/api`. Copy `.env.example` to `.env` to configure another URL.
+The default API URL is `http://localhost:8082/api`. Copy `.env.example` to `.env` to configure another URL.

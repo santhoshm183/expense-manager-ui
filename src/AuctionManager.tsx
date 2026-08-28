@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Gavel, Pencil, Plus, Trash2 } from "lucide-react";
-import { Modal } from "./InstallmentModal";
+import { FeedbackPopup, Modal } from "./InstallmentModal";
 
 type Chit = { id: string; name: string };
 type Member = {
@@ -10,7 +10,8 @@ type Member = {
     chitTaken?: boolean;
 };
 type Auction = {
-    extraHand: boolean;
+    handType: "ExtrHand" | "ReleaseHand" | "AgentHand";
+    partialAmount: boolean;
     id: string;
     chitId: string;
     chitName: string;
@@ -37,10 +38,12 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
     const [auctions, setAuctions] = useState<Auction[]>([]);
     const [chitId, setChitId] = useState(initialChitId);
     const [formChitId, setFormChitId] = useState("");
-    const [extraHand, setExtraHand] = useState(false);
+    const [handType, setHandType] = useState<Auction["handType"]>("ReleaseHand");
+    const [partialAmount, setPartialAmount] = useState(false);
     const [editing, setEditing] = useState<Auction | null>(null);
     const [showForm, setShowForm] = useState(false);
     const [error, setError] = useState("");
+    const [success, setSuccess] = useState("");
     useEffect(() => { if (initialChitId) setChitId(initialChitId); }, [initialChitId]);
     useEffect(() => {
         Promise.all([fetch(`${baseUrl}/chits`), fetch(`${baseUrl}/members`)])
@@ -64,6 +67,7 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
     const formMembers = formChitId
         ? members.filter((member) => member.chit?.id === formChitId)
         : [];
+    const nextBidNo = auctions.reduce((highest, auction) => Math.max(highest, auction.bidNo), 0) + 1;
     async function save(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
         const data = Object.fromEntries(new FormData(event.currentTarget));
@@ -75,7 +79,8 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                 body: JSON.stringify({
                     chitId: data.chitId,
                     bidNo: Number(data.bidNo),
-                    extraHand,
+                    handType,
+                    partialAmount,
                     auctionMonth: data.auctionMonth,
                     bidAmount: Number(data.bidAmount),
                     winningMemberId: data.winningMemberId,
@@ -83,9 +88,9 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
             },
         );
         if (!response.ok) {
-            setError(
-                "The auction could not be saved. Check the bid amount and selected member.",
-            );
+            let message = "Something went wrong. Please try again.";
+            try { const body = await response.json(); if (typeof body.message === "string") message = body.message; } catch { /* common error */ }
+            setError(message);
             return;
         }
         const saved = (await response.json()) as Auction;
@@ -97,6 +102,7 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
         setEditing(null);
         setShowForm(false);
         setError("");
+        setSuccess(editing ? "Auction updated successfully." : "Auction created successfully.");
     }
     async function remove(auction: Auction) {
         if (
@@ -109,14 +115,16 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
             method: "DELETE",
         });
         if (!response.ok) {
-            setError("The auction could not be deleted.");
+            setError("Something went wrong. Please try again.");
             return;
         }
         setAuctions((items) => items.filter((item) => item.id !== auction.id));
+        setSuccess("Auction deleted successfully.");
     }
     return (
         <>
-            {error && <div className="api-notice">{error}</div>}
+            {error && <FeedbackPopup message={error} type="error" close={() => { setError(""); setSuccess(""); }} />}
+            {!error && success && <FeedbackPopup message={success} type="success" close={() => setSuccess("")} />}
             <div className="page-heading">
                 <div>
                     <p className="section-kicker">MONTHLY AUCTION SYSTEM</p>
@@ -142,7 +150,8 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                         onClick={() => {
                             setEditing(null);
                             setFormChitId(chitId === "all" ? "" : chitId);
-                            setExtraHand(false);
+                            setHandType("ReleaseHand");
+                            setPartialAmount(false);
                             setShowForm(true);
                         }}
                     >
@@ -178,15 +187,16 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                                 <span>Agent {money(auction.agentAmount)}</span>
                                 <strong>Profit {money(auction.profitAmount)}</strong>
                             </div>
-                            <span className={auction.extraHand ? "status active" : "status"}>
-                                {auction.extraHand ? "Extra hand" : "Regular hand"}
+                            <span className={auction.handType === "ExtrHand" ? "status active" : "status"}>
+                                {auction.handType}
                             </span>
                             <div className="row-actions">
                                 <button
                                     onClick={() => {
                                         setEditing(auction);
                                         setFormChitId(auction.chitId);
-                                        setExtraHand(auction.extraHand);
+                                        setHandType(auction.handType);
+                                        setPartialAmount(auction.partialAmount);
                                         setShowForm(true);
                                     }}
                                     aria-label="Edit auction"
@@ -242,18 +252,31 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                                 type="number"
                                 min="1"
                                 max="999"
-                                defaultValue={editing?.bidNo || ""}
+                                defaultValue={editing?.bidNo || nextBidNo}
                                 required
                             />
                         </label>
-                        <label className="toggle-field">
-                            Extra hand
-                            <button type="button" className={extraHand ? "toggle-button on" : "toggle-button"} onClick={() => setExtraHand((value) => !value)} aria-pressed={extraHand}>
-                                <span className="toggle-knob" />
-                                <strong>{extraHand ? "ON" : "OFF"}</strong>
-                            </button>
-                            <input name="extraHand" type="hidden" value={extraHand ? "true" : "false"} />
+                        <label>
+                            Hand type
+                            <select value={handType} onChange={(event) => {
+                                const selectedHandType = event.target.value as Auction["handType"];
+                                setHandType(selectedHandType);
+                                if (selectedHandType !== "ExtrHand") setPartialAmount(false);
+                            }}>
+                                <option value="ExtrHand">ExtrHand</option>
+                                <option value="ReleaseHand">ReleaseHand</option>
+                                <option value="AgentHand">AgentHand</option>
+                            </select>
                         </label>
+                        {handType === "ExtrHand" && (
+                            <label className="toggle-field">
+                                Partial amount
+                                <button type="button" className={partialAmount ? "toggle-button on" : "toggle-button"} onClick={() => setPartialAmount((value) => !value)} aria-pressed={partialAmount}>
+                                    <span className="toggle-knob" />
+                                    <strong>{partialAmount ? "YES" : "NO"}</strong>
+                                </button>
+                            </label>
+                        )}
                         <label>
                             Auction month
                             <input

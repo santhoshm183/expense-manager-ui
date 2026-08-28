@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import InstallmentManager from "./InstallmentManager";
 import AuctionManager from "./AuctionManager";
+import { FeedbackPopup } from "./InstallmentModal";
 
 type TransactionType = "income" | "savings" | "expense";
 type Transaction = {
@@ -83,6 +84,7 @@ export default function App() {
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
     const [apiError, setApiError] = useState("");
+    const [apiSuccess, setApiSuccess] = useState("");
     const [editing, setEditing] = useState<Transaction | null>(null);
     const [showForm, setShowForm] = useState(false);
     const [view, setView] = useState<"expenses" | "chits">("expenses");
@@ -147,6 +149,7 @@ export default function App() {
         setEditing(null);
         setShowForm(false);
         setApiError("");
+        setApiSuccess(editing ? "Transaction updated successfully." : "Transaction added successfully.");
     }
 
     async function remove(item: Transaction) {
@@ -156,6 +159,7 @@ export default function App() {
             return;
         }
         setTransactions((items) => items.filter((old) => old.id !== item.id));
+        setApiSuccess("Transaction deleted successfully.");
     }
 
     function exportMonth() {
@@ -244,7 +248,19 @@ export default function App() {
                         <ChitManager />
                     ) : (
                         <>
-                            {apiError && <div className="api-notice">{apiError}</div>}
+                            {apiError && (
+                                <FeedbackPopup
+                                    message={apiError}
+                                    type="error"
+                                    close={() => {
+                                        setApiError("");
+                                        setApiSuccess("");
+                                    }}
+                                />
+                            )}
+                            {!apiError && apiSuccess && (
+                                <FeedbackPopup message={apiSuccess} type="success" close={() => setApiSuccess("")} />
+                            )}
                             <div className="page-heading">
                                 <div>
                                     <p className="section-kicker">MONTHLY SNAPSHOT</p>
@@ -589,6 +605,7 @@ function ChitManager() {
     const [selectedChitId, setSelectedChitId] = useState("");
     const [dashboard, setDashboard] = useState<ChitDashboard | null>(null);
     const [error, setError] = useState("");
+    const [success, setSuccess] = useState("");
     useEffect(() => {
         fetch(`${baseUrl}/chits`)
             .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
@@ -636,7 +653,7 @@ function ChitManager() {
             }),
         });
         if (!response.ok) {
-            setError("The chit could not be saved.");
+            setError("Something went wrong. Please try again.");
             return;
         }
         const created = (await response.json()) as Chit;
@@ -644,13 +661,15 @@ function ChitManager() {
         setShowChit(false);
         setEditingChit(null);
         setError("");
+        setSuccess(editingChit ? "Chit updated successfully." : "Chit created successfully.");
     }
 
     async function deleteChit(chit: Chit) {
         if (!window.confirm(`Delete ${chit.name}? This also removes its members and installments.`)) return;
         const response = await fetch(`${baseUrl}/chits/${chit.id}`, { method: "DELETE" });
-        if (!response.ok) { setError("The chit could not be deleted."); return; }
+        if (!response.ok) { setError("Something went wrong. Please try again."); return; }
         setChits((items) => items.filter((item) => item.id !== chit.id));
+        setSuccess("Chit deleted successfully.");
     }
     async function submitMember(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
@@ -669,7 +688,16 @@ function ChitManager() {
             },
         );
         if (!response.ok) {
-            setError("The member could not be saved.");
+            let message = "Something went wrong. Please try again.";
+            try {
+                const body = await response.json();
+                if (typeof body.message === "string") message = body.message;
+            } catch {
+                // Use the common fallback when the backend has no response body.
+            }
+            setError(message);
+            setShowMember(false);
+            setEditingMember(null);
             return;
         }
         const saved = (await response.json()) as Member;
@@ -681,17 +709,24 @@ function ChitManager() {
         setShowMember(false);
         setEditingMember(null);
         setError("");
+        setSuccess(editingMember ? "Member updated successfully." : "Member created successfully.");
     }
 
     async function deleteMember(member: Member) {
         if (!window.confirm(`Delete ${member.name}?`)) return;
         const response = await fetch(`${baseUrl}/members/${member.id}`, { method: "DELETE" });
-        if (!response.ok) { setError("The member could not be deleted."); return; }
+        if (!response.ok) { setError("Something went wrong. Please try again."); return; }
         setMembers((items) => items.filter((item) => item.id !== member.id));
+        setSuccess("Member deleted successfully.");
     }
     return (
         <>
-            {error && <div className="api-notice">{error}</div>}
+            {error && (
+                <FeedbackPopup message={error} type="error" close={() => setError("")} />
+            )}
+            {!error && success && (
+                <FeedbackPopup message={success} type="success" close={() => setSuccess("")} />
+            )}
             <div className="page-heading">
                 <div>
                     <p className="section-kicker">GROUP SAVINGS WORKSPACE</p>
@@ -703,6 +738,7 @@ function ChitManager() {
                         onClick={() => {
                             setEditingMember(null);
                             setShowMember(true);
+                            setError("");
                         }}
                     >
                         <Users size={16} />
@@ -854,7 +890,7 @@ function ChitManager() {
                     </div>
                     {members.length ? (
                         members.map((member) => (
-                            <div className="person-row member-row-button" key={member.id} onClick={() => { setEditingMember(member); setShowMember(true); }} role="button" tabIndex={0}>
+                            <div className="person-row member-row-button" key={member.id} onClick={() => { setEditingMember(member); setShowMember(true); setError(""); }} role="button" tabIndex={0}>
                                 <div className="person-avatar">
                                     {member.name.slice(0, 1).toUpperCase()}
                                 </div>
