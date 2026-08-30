@@ -16,7 +16,10 @@ import {
 } from "lucide-react";
 import InstallmentManager from "./InstallmentManager";
 import AuctionManager from "./AuctionManager";
+import IncomeManager from "./IncomeManager";
 import { FeedbackPopup } from "./InstallmentModal";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 type TransactionType = "income" | "savings" | "expense";
 type Transaction = {
@@ -64,7 +67,11 @@ type ChitDashboard = {
     extraHands: number;
     amountDistributed: number;
     agentCommission: number;
+    investmentIncome: number;
 };
+type ExportInstallment = { memberName: string; installmentDate: string; numberOfHand: number; installmentAmount: number };
+type ExportAuction = { bidNo: number; auctionMonth: string; winningMemberName: string; handType: string; bidAmount: number; netAmountPaid: number; profitAmount: number };
+type ExportIncome = { incomeAmount: number; percentage: number; numberOfMonths: number; interestEarnedAmount: number; createdAt: string; active: boolean };
 
 const money = (value: number) =>
     new Intl.NumberFormat("en-IN", {
@@ -597,7 +604,7 @@ function ChitManager() {
     const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
     const [chits, setChits] = useState<Chit[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
-    const [tab, setTab] = useState<"overview" | "members" | "installments" | "auctions">("overview");
+    const [tab, setTab] = useState<"overview" | "members" | "installments" | "auctions" | "income">("overview");
     const [showChit, setShowChit] = useState(false);
     const [editingChit, setEditingChit] = useState<Chit | null>(null);
     const [showMember, setShowMember] = useState(false);
@@ -606,6 +613,9 @@ function ChitManager() {
     const [dashboard, setDashboard] = useState<ChitDashboard | null>(null);
     const [error, setError] = useState("");
     const [success, setSuccess] = useState("");
+    const [formMemberCount, setFormMemberCount] = useState("");
+    const [formInstallmentAmount, setFormInstallmentAmount] = useState("");
+    const [exporting, setExporting] = useState(false);
     useEffect(() => {
         fetch(`${baseUrl}/chits`)
             .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
@@ -623,7 +633,11 @@ function ChitManager() {
             .catch(() => setError("Could not load the selected chit dashboard."));
         loadSummary();
         window.addEventListener("installment-changed", loadSummary);
-        return () => window.removeEventListener("installment-changed", loadSummary);
+        window.addEventListener("auction-changed", loadSummary);
+        return () => {
+            window.removeEventListener("installment-changed", loadSummary);
+            window.removeEventListener("auction-changed", loadSummary);
+        };
     }, [selectedChitId]);
     useEffect(() => {
         if (tab !== "members" || !selectedChitId) return;
@@ -719,6 +733,84 @@ function ChitManager() {
         setMembers((items) => items.filter((item) => item.id !== member.id));
         setSuccess("Member deleted successfully.");
     }
+    async function exportBackup() {
+        if (!chits.length) {
+            setError("There are no chits to export.");
+            return;
+        }
+        setExporting(true);
+        try {
+            const pdf = new jsPDF({ unit: "mm", format: "a4" });
+            for (const [index, chit] of chits.entries()) {
+                if (index > 0) pdf.addPage();
+                const [memberResponse, installmentResponse, auctionResponse, incomeResponse] = await Promise.all([
+                    fetch(`${baseUrl}/members?chitId=${chit.id}`),
+                    fetch(`${baseUrl}/installments?chitId=${chit.id}`),
+                    fetch(`${baseUrl}/auctions?chitId=${chit.id}`),
+                    fetch(`${baseUrl}/incomes?chitId=${chit.id}`),
+                ]);
+                if ([memberResponse, installmentResponse, auctionResponse, incomeResponse].some((response) => !response.ok)) throw new Error();
+                const membersForExport = await memberResponse.json() as Member[];
+                const installmentsForExport = await installmentResponse.json() as ExportInstallment[];
+                const auctionsForExport = await auctionResponse.json() as ExportAuction[];
+                const incomesForExport = await incomeResponse.json() as ExportIncome[];
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                pdf.setFillColor(31, 91, 68);
+                pdf.rect(0, 0, pageWidth, 34, "F");
+                pdf.setTextColor(255, 255, 255);
+                pdf.setFont("helvetica", "bold");
+                pdf.setFontSize(22);
+                pdf.text("LEDGERLY", 15, 16);
+                pdf.setFontSize(10);
+                pdf.setFont("helvetica", "normal");
+                pdf.text("Chit financial backup", 15, 24);
+                pdf.text(`Exported ${new Date().toLocaleDateString("en-IN")}`, pageWidth - 15, 24, { align: "right" });
+                pdf.setTextColor(30, 40, 36);
+                pdf.setFont("helvetica", "bold");
+                pdf.setFontSize(17);
+                pdf.text(chit.name, 15, 47);
+                pdf.setFont("helvetica", "normal");
+                pdf.setFontSize(9);
+                pdf.setTextColor(115, 128, 121);
+                pdf.text(`${chit.chitId}  |  ${chit.status.toUpperCase()}`, 15, 54);
+                autoTable(pdf, {
+                    startY: 61,
+                    theme: "plain",
+                    styles: { font: "helvetica", fontSize: 9, cellPadding: 3, textColor: [30, 40, 36] },
+                    headStyles: { fillColor: [228, 242, 232], textColor: [45, 118, 86], fontStyle: "bold" },
+                    head: [["Total amount", "Members", "Monthly installment", "Duration", "Agent"]],
+                    body: [[money(chit.totalAmount), String(chit.memberCount), money(chit.monthlyInstallment), `${chit.durationMonths} months`, `${chit.agentPercentage}%`]],
+                });
+                let y = (pdf as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 70;
+                const section = (title: string, head: string[], body: string[][]) => {
+                    if (y > 260) { pdf.addPage(); y = 18; }
+                    pdf.setTextColor(31, 91, 68);
+                    pdf.setFont("helvetica", "bold");
+                    pdf.setFontSize(12);
+                    pdf.text(title, 15, y + 12);
+                    autoTable(pdf, {
+                        startY: y + 16,
+                        theme: "striped",
+                        styles: { font: "helvetica", fontSize: 8, cellPadding: 2.5, overflow: "linebreak" },
+                        headStyles: { fillColor: [31, 91, 68], textColor: [255, 255, 255] },
+                        alternateRowStyles: { fillColor: [247, 250, 247] },
+                        head: [head], body: body.length ? body : [["No records"]],
+                    });
+                    y = (pdf as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 24;
+                };
+                section("Members", ["Name", "Mobile", "Email", "Status"], membersForExport.map((member) => [member.name, member.mobileNumber, member.email || "-", member.chitTaken ? "Taken" : "Not taken"]));
+                section("Installments", ["Member", "Month / date", "Hand", "Amount"], installmentsForExport.sort((a, b) => `${b.installmentDate}`.localeCompare(`${a.installmentDate}`)).map((item) => [item.memberName, item.installmentDate, String(item.numberOfHand), money(Number(item.installmentAmount))]));
+                section("Auctions", ["Bid", "Month", "Winner", "Hand", "Bid amount", "Profit"], auctionsForExport.map((item) => [`#${item.bidNo}`, item.auctionMonth, item.winningMemberName, item.handType, money(Number(item.bidAmount)), money(Number(item.profitAmount))]));
+                section("Income", ["Income amount", "%", "Months", "Interest earned", "Created", "Status"], incomesForExport.map((item) => [money(Number(item.incomeAmount)), `${item.percentage}%`, String(item.numberOfMonths), money(Number(item.interestEarnedAmount)), new Date(item.createdAt).toLocaleDateString("en-IN"), item.active ? "Active" : "Deleted"]));
+            }
+            pdf.save(`ledgerly-chit-backup-${new Date().toISOString().slice(0, 10)}.pdf`);
+            setSuccess("Chit backup exported successfully.");
+        } catch {
+            setError("Could not export the chit backup. Please try again.");
+        } finally {
+            setExporting(false);
+        }
+    }
     return (
         <>
             {error && (
@@ -744,7 +836,11 @@ function ChitManager() {
                         <Users size={16} />
                         Add member
                     </button>
-                    <button className="primary-button" onClick={() => { setEditingChit(null); setShowChit(true); }}>
+                    <button className="secondary-button" onClick={exportBackup} disabled={exporting}>
+                        <Download size={16} />
+                        {exporting ? "Preparing..." : "Export PDF"}
+                    </button>
+                    <button className="primary-button" onClick={() => { setEditingChit(null); setFormMemberCount(""); setFormInstallmentAmount(""); setShowChit(true); }}>
                         <Plus size={17} />
                         Create chit
                     </button>
@@ -765,7 +861,7 @@ function ChitManager() {
                 />
                 <Card
                     label="Investment income"
-                    value={0}
+                    value={dashboard?.investmentIncome ?? 0}
                     icon={<PiggyBank />}
                     tone="yellow"
                 />
@@ -801,6 +897,12 @@ function ChitManager() {
                 >
                     Auctions
                 </button>
+                <button
+                    className={tab === "income" ? "tab active" : "tab"}
+                    onClick={() => setTab("income")}
+                >
+                    Income
+                </button>
             </div>
             {tab === "overview" ? (
                 <div className="chit-layout">
@@ -824,7 +926,7 @@ function ChitManager() {
                                         <span style={{ width: "12%" }} />
                                     </div>
                                     <div className="card-actions">
-                                        <button onClick={() => { setEditingChit(chit); setShowChit(true); }} aria-label={`Edit ${chit.name}`}><Pencil size={14} />Edit</button>
+                                        <button onClick={() => { setEditingChit(chit); setFormMemberCount(String(chit.memberCount)); setFormInstallmentAmount(String(chit.monthlyInstallment)); setShowChit(true); }} aria-label={`Edit ${chit.name}`}><Pencil size={14} />Edit</button>
                                         <button onClick={() => deleteChit(chit)} aria-label={`Delete ${chit.name}`}><Trash2 size={14} />Delete</button>
                                     </div>
                                 </div>
@@ -865,7 +967,7 @@ function ChitManager() {
                         <div className="profit-box">
                             <div>
                                 <span>Investment income earned</span>
-                                <strong>{money(0)}</strong>
+                                <strong>{money(dashboard?.investmentIncome ?? 0)}</strong>
                             </div>
                             <small>
                                 Add an investment from the module when unused funds are
@@ -912,7 +1014,7 @@ function ChitManager() {
                         </div>
                     )}
                 </section>
-            ) : tab === "installments" ? <InstallmentManager initialChitId={selectedChitId} /> : <AuctionManager initialChitId={selectedChitId} />}
+            ) : tab === "installments" ? <InstallmentManager initialChitId={selectedChitId} /> : tab === "auctions" ? <AuctionManager initialChitId={selectedChitId} /> : <IncomeManager chitId={selectedChitId} />}
             {showChit && (
                 <Modal title={editingChit ? "Edit chit" : "Create a chit"} close={() => { setShowChit(false); setEditingChit(null); }}>
                     <form className="form" onSubmit={submitChit}>
@@ -926,16 +1028,20 @@ function ChitManager() {
                             />
                         </label>
                         <label>
-                            Total chit amount
-                            <input name="totalAmount" type="number" min="1" defaultValue={editingChit?.totalAmount || ""} required />
-                        </label>
-                        <label>
                             Number of members
-                            <input name="memberCount" type="number" min="1" defaultValue={editingChit?.memberCount || ""} required />
+                            <input name="memberCount" type="number" min="1" value={formMemberCount} onChange={(event) => setFormMemberCount(event.target.value)} required />
                         </label>
                         <label>
-                            Monthly installment
-                            <input name="monthlyInstallment" type="number" min="1" defaultValue={editingChit?.monthlyInstallment || ""} required />
+                            Installement Amt
+                            <input name="monthlyInstallment" type="number" min="1" value={formInstallmentAmount} onChange={(event) => setFormInstallmentAmount(event.target.value)} required />
+                        </label>
+                        <label>
+                            Chit Amt
+                            <input name="totalAmount" type="number" min="1" value={(Number(formMemberCount) * Number(formInstallmentAmount)) || ""} readOnly required />
+                        </label>
+                        <label>
+                            Duration
+                            <input name="durationMonths" type="number" min="1" defaultValue={editingChit?.durationMonths || ""} required />
                         </label>
                         <label>
                             Agent percentage
@@ -944,10 +1050,6 @@ function ChitManager() {
                         <label>
                             Start date
                             <input name="startDate" type="date" defaultValue={editingChit?.startDate || ""} required />
-                        </label>
-                        <label>
-                            Duration (months)
-                            <input name="durationMonths" type="number" min="1" defaultValue={editingChit?.durationMonths || ""} required />
                         </label>
                         <button className="primary-button submit-button" type="submit">
                             {editingChit ? "Save changes" : "Create chit"}

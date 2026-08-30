@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Gavel, Pencil, Plus, Trash2 } from "lucide-react";
+import { Gavel, Pencil, Plus } from "lucide-react";
 import { FeedbackPopup, Modal } from "./InstallmentModal";
 
 type Chit = { id: string; name: string };
@@ -65,7 +65,10 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
             .catch(() => setError("Could not load auctions."));
     }, [chitId]);
     const formMembers = formChitId
-        ? members.filter((member) => member.chit?.id === formChitId)
+        ? members.filter((member) =>
+            member.chit?.id === formChitId &&
+            (!member.chitTaken || member.id === editing?.winningMemberId),
+        )
         : [];
     const nextBidNo = auctions.reduce((highest, auction) => Math.max(highest, auction.bidNo), 0) + 1;
     async function save(event: FormEvent<HTMLFormElement>) {
@@ -77,8 +80,8 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                 method: editing ? "PUT" : "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    chitId: data.chitId,
-                    bidNo: Number(data.bidNo),
+                    chitId: formChitId,
+                    bidNo: editing ? editing.bidNo : Number(data.bidNo),
                     handType,
                     partialAmount,
                     auctionMonth: data.auctionMonth,
@@ -103,23 +106,22 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
         setShowForm(false);
         setError("");
         setSuccess(editing ? "Auction updated successfully." : "Auction created successfully.");
-    }
-    async function remove(auction: Auction) {
-        if (
-            !window.confirm(
-                `Delete bid #${auction.bidNo} for ${auction.winningMemberName}?`,
-            )
-        )
-            return;
-        const response = await fetch(`${baseUrl}/auctions/${auction.id}`, {
-            method: "DELETE",
-        });
-        if (!response.ok) {
-            setError("Something went wrong. Please try again.");
-            return;
+
+        const refreshedMembers = await fetch(`${baseUrl}/members`);
+        if (refreshedMembers.ok) {
+            setMembers(await refreshedMembers.json());
         }
-        setAuctions((items) => items.filter((item) => item.id !== auction.id));
-        setSuccess("Auction deleted successfully.");
+
+        if (formChitId) {
+            fetch(`${baseUrl}/chits/${formChitId}/summary`)
+                .then((response) => {
+                    if (response.ok) return response.json();
+                    return null;
+                })
+                .catch(() => undefined);
+        }
+
+        window.dispatchEvent(new Event("auction-changed"));
     }
     return (
         <>
@@ -203,12 +205,6 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                                 >
                                     <Pencil size={14} />
                                 </button>
-                                <button
-                                    onClick={() => remove(auction)}
-                                    aria-label="Delete auction"
-                                >
-                                    <Trash2 size={14} />
-                                </button>
                             </div>
                         </div>
                     ))
@@ -230,6 +226,7 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                             <select
                                 name="chitId"
                                 value={formChitId}
+                                disabled={Boolean(editing)}
                                 onChange={(event) => {
                                     setFormChitId(event.target.value);
                                 }}
@@ -253,12 +250,13 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                                 min="1"
                                 max="999"
                                 defaultValue={editing?.bidNo || nextBidNo}
+                                disabled={Boolean(editing)}
                                 required
                             />
                         </label>
                         <label>
                             Hand type
-                            <select value={handType} onChange={(event) => {
+                            <select value={handType} disabled={Boolean(editing)} onChange={(event) => {
                                 const selectedHandType = event.target.value as Auction["handType"];
                                 setHandType(selectedHandType);
                                 if (selectedHandType !== "ExtrHand") setPartialAmount(false);
