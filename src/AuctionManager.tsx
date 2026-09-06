@@ -133,20 +133,6 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                     <h2>Auctions</h2>
                 </div>
                 <div className="heading-controls">
-                    <label className="member-filter">
-                        <span>Chit</span>
-                        <select
-                            value={chitId}
-                            onChange={(event) => setChitId(event.target.value)}
-                        >
-                            <option value="all">All chits</option>
-                            {chits.map((chit) => (
-                                <option value={chit.id} key={chit.id}>
-                                    {chit.name}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
                     <button
                         className="primary-button"
                         onClick={() => {
@@ -187,7 +173,6 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                                 <span>Bid {money(auction.bidAmount)}</span>
                                 <span>Net {money(auction.netAmountPaid)}</span>
                                 <span>Agent {money(auction.agentAmount)}</span>
-                                <strong>Profit {money(auction.profitAmount)}</strong>
                             </div>
                             <span className={auction.handType === "ExtrHand" ? "status active" : "status"}>
                                 {auction.handType}

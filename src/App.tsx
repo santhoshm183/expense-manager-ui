@@ -1,14 +1,19 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
     ArrowUpRight,
+    Bell,
     CalendarDays,
+    ChevronDown,
     CirclePlus,
     Download,
     HandCoins,
+    LayoutDashboard,
+    Menu,
     Pencil,
     PiggyBank,
     Plus,
     Receipt,
+    UserRound,
     Trash2,
     Users,
     WalletCards,
@@ -22,6 +27,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 type TransactionType = "income" | "savings" | "expense";
+type ChitTab = "overview" | "members" | "installments" | "auctions" | "income";
 type Transaction = {
     id: string;
     date: string;
@@ -95,6 +101,8 @@ export default function App() {
     const [editing, setEditing] = useState<Transaction | null>(null);
     const [showForm, setShowForm] = useState(false);
     const [view, setView] = useState<"expenses" | "chits">("expenses");
+    const [chitTab, setChitTab] = useState<ChitTab>("overview");
+    const [menuOpen, setMenuOpen] = useState(false);
 
     useEffect(() => {
         fetch(apiUrl)
@@ -244,15 +252,26 @@ export default function App() {
             </aside>
             <main className="main-content">
                 <header className="topbar">
-                    <div>
-                        <p className="breadcrumb">Workspace / Expenses</p>
-                        <h1>Good morning, Santhosh.</h1>
+                    <div className="topbar-title">
+                        <button className="mobile-menu" onClick={() => setMenuOpen(true)} aria-label="Open navigation">
+                            <Menu size={23} />
+                        </button>
+                        <div>
+                            <p className="breadcrumb">Workspace / {view === "chits" ? "Dashboard" : "Expenses"}</p>
+                            <h1>Good morning, Santhosh.</h1>
+                        </div>
                     </div>
-                    <div className="avatar">S</div>
+                    <div className="topbar-actions">
+                        <span className="notification-button" aria-hidden="true">
+                            <Bell size={21} />
+                            <span>3</span>
+                        </span>
+                        <div className="avatar">S</div>
+                    </div>
                 </header>
                 <div className="page">
                     {view === "chits" ? (
-                        <ChitManager />
+                        <ChitManager tab={chitTab} />
                     ) : (
                         <>
                             {apiError && (
@@ -407,21 +426,37 @@ export default function App() {
                     )}
                 </div>
             </main>
-            <nav className="mobile-nav" aria-label="Main navigation">
-                <button
-                    className={view === "expenses" ? "selected" : ""}
-                    onClick={() => setView("expenses")}
-                >
-                    <Receipt size={18} />
-                    Expenses
-                </button>
-                <button
-                    className={view === "chits" ? "selected" : ""}
-                    onClick={() => setView("chits")}
-                >
-                    <HandCoins size={18} />
-                    Chit Manager
-                </button>
+            {menuOpen && (
+                <>
+                    <button className="drawer-backdrop" onClick={() => setMenuOpen(false)} aria-label="Close navigation" />
+                    <aside className="mobile-drawer" aria-label="App navigation">
+                        <div className="drawer-heading">
+                            <strong>Menu</strong>
+                            <button onClick={() => setMenuOpen(false)} aria-label="Close navigation">×</button>
+                        </div>
+                        <button className={view === "expenses" ? "drawer-item active" : "drawer-item"} onClick={() => { setView("expenses"); setMenuOpen(false); }}>
+                            <Receipt size={19} />
+                            Expenses
+                        </button>
+                        <button className={view === "chits" ? "drawer-item active" : "drawer-item"} onClick={() => { setView("chits"); setMenuOpen(false); }}>
+                            <HandCoins size={19} />
+                            Chit Manager
+                        </button>
+                    </aside>
+                </>
+            )}
+            <nav className={view === "chits" ? "mobile-nav chit-mobile-nav" : "mobile-nav"} aria-label="Main navigation">
+                {view === "chits" ? (
+                    <>
+                        <button className={chitTab === "overview" ? "selected" : ""} onClick={() => setChitTab("overview")}><LayoutDashboard size={18} />Dashboard</button>
+                        <button className={chitTab === "members" ? "selected" : ""} onClick={() => setChitTab("members")}><UserRound size={18} />Members</button>
+                        <button className={chitTab === "installments" ? "selected" : ""} onClick={() => setChitTab("installments")}><CalendarDays size={18} />Installments</button>
+                        <button className={chitTab === "auctions" ? "selected" : ""} onClick={() => setChitTab("auctions")}><HandCoins size={18} />Auctions</button>
+                        <button className={chitTab === "income" ? "selected" : ""} onClick={() => setChitTab("income")}><PiggyBank size={18} />Income</button>
+                    </>
+                ) : (
+                    <button className="selected" onClick={() => setView("expenses")}><Receipt size={18} />Expenses</button>
+                )}
             </nav>
             {showForm && (
                 <Modal
@@ -600,11 +635,10 @@ function Modal({
     );
 }
 
-function ChitManager() {
+function ChitManager({ tab }: { tab: ChitTab }) {
     const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
     const [chits, setChits] = useState<Chit[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
-    const [tab, setTab] = useState<"overview" | "members" | "installments" | "auctions" | "income">("overview");
     const [showChit, setShowChit] = useState(false);
     const [editingChit, setEditingChit] = useState<Chit | null>(null);
     const [showMember, setShowMember] = useState(false);
@@ -811,6 +845,7 @@ function ChitManager() {
             setExporting(false);
         }
     }
+    const selectedChit = chits.find((chit) => chit.id === selectedChitId);
     return (
         <>
             {error && (
@@ -819,122 +854,59 @@ function ChitManager() {
             {!error && success && (
                 <FeedbackPopup message={success} type="success" close={() => setSuccess("")} />
             )}
-            <div className="page-heading">
-                <div>
-                    <p className="section-kicker">GROUP SAVINGS WORKSPACE</p>
-                    <h2>Chit Manager{chits.find((chit) => chit.id === selectedChitId) && <span className="selected-chit-name"> / {chits.find((chit) => chit.id === selectedChitId)?.name}</span>}</h2>
+            <label className="chit-selector">
+                <span>{selectedChit?.name || "Select a chit"}</span>
+                <select value={selectedChitId} onChange={(event) => setSelectedChitId(event.target.value)} aria-label="Select chit">
+                    <option value="" disabled>Select a chit</option>
+                    {chits.map((chit) => <option value={chit.id} key={chit.id}>{chit.name}</option>)}
+                </select>
+                <ChevronDown size={18} />
+            </label>
+            {tab === "overview" && selectedChit && (
+                <div className="chit-details-row" aria-label="Selected chit details">
+                    <div><span>Number of members</span><strong>{selectedChit.memberCount}</strong></div>
+                    <div><span>Chit Amt</span><strong>{money(selectedChit.totalAmount)}</strong></div>
+                    <div><span>Installement Amt</span><strong>{money(selectedChit.monthlyInstallment)}</strong></div>
+                    <div><span>Duration</span><strong>{selectedChit.durationMonths} months</strong></div>
+                    <div><span>Agent percentage</span><strong>{selectedChit.agentPercentage}%</strong></div>
                 </div>
-                <div className="heading-controls">
-                    <button
-                        className="secondary-button"
-                        onClick={() => {
-                            setEditingMember(null);
-                            setShowMember(true);
-                            setError("");
-                        }}
-                    >
+            )}
+            {tab === "overview" && (
+                <>
+                    <div className="page-heading chit-page-heading">
+                        <div className="heading-controls">
+                            <button className="secondary-button" onClick={exportBackup} disabled={exporting}>
+                                <Download size={16} />
+                                {exporting ? "Preparing..." : "Export PDF"}
+                            </button>
+                            <button className="primary-button" onClick={() => { setEditingChit(null); setFormMemberCount(""); setFormInstallmentAmount(""); setShowChit(true); }}>
+                                <Plus size={17} />
+                                Create chit
+                            </button>
+                        </div>
+                    </div>
+                    <div className="summary-grid">
+                        <Card label="Total collection of the month" value={dashboard?.totalCollectionOfMonth ?? 0} icon={<HandCoins />} tone="green" />
+                        <Card label="Available balance" value={dashboard?.availableBalance ?? 0} icon={<WalletCards />} tone="blue" />
+                        <Card label="Investment income" value={dashboard?.investmentIncome ?? 0} icon={<PiggyBank />} tone="yellow" />
+                        <Card label="Members not paid" value={dashboard?.membersNotPaid ?? 0} icon={<Users />} tone="coral" />
+                    </div>
+                </>
+            )}
+            {tab === "members" && (
+                <div className="page-heading module-page-heading">
+                    <div>
+                        <p className="section-kicker">CHIT MEMBERS</p>
+                        <h2>Member module</h2>
+                    </div>
+                    <button className="primary-button" onClick={() => { setEditingMember(null); setShowMember(true); setError(""); }}>
                         <Users size={16} />
                         Add member
                     </button>
-                    <button className="secondary-button" onClick={exportBackup} disabled={exporting}>
-                        <Download size={16} />
-                        {exporting ? "Preparing..." : "Export PDF"}
-                    </button>
-                    <button className="primary-button" onClick={() => { setEditingChit(null); setFormMemberCount(""); setFormInstallmentAmount(""); setShowChit(true); }}>
-                        <Plus size={17} />
-                        Create chit
-                    </button>
                 </div>
-            </div>
-            <div className="summary-grid">
-                <Card
-                    label="Total collection of the month"
-                    value={dashboard?.totalCollectionOfMonth ?? 0}
-                    icon={<HandCoins />}
-                    tone="green"
-                />
-                <Card
-                    label="Available balance"
-                    value={dashboard?.availableBalance ?? 0}
-                    icon={<WalletCards />}
-                    tone="blue"
-                />
-                <Card
-                    label="Investment income"
-                    value={dashboard?.investmentIncome ?? 0}
-                    icon={<PiggyBank />}
-                    tone="yellow"
-                />
-                <Card
-                    label="Members not paid"
-                    value={dashboard?.membersNotPaid ?? 0}
-                    icon={<Users />}
-                    tone="coral"
-                />
-            </div>
-            <div className="tab-bar">
-                <button
-                    className={tab === "overview" ? "tab active" : "tab"}
-                    onClick={() => setTab("overview")}
-                >
-                    Chit dashboard
-                </button>
-                <button
-                    className={tab === "members" ? "tab active" : "tab"}
-                    onClick={() => setTab("members")}
-                >
-                    Member module
-                </button>
-                <button
-                    className={tab === "installments" ? "tab active" : "tab"}
-                    onClick={() => setTab("installments")}
-                >
-                    Installments
-                </button>
-                <button
-                    className={tab === "auctions" ? "tab active" : "tab"}
-                    onClick={() => setTab("auctions")}
-                >
-                    Auctions
-                </button>
-                <button
-                    className={tab === "income" ? "tab active" : "tab"}
-                    onClick={() => setTab("income")}
-                >
-                    Income
-                </button>
-            </div>
+            )}
             {tab === "overview" ? (
                 <div className="chit-layout">
-                    <section className="chit-list">
-                        {chits.length ? (
-                            chits.map((chit) => (
-                                <div className={chit.id === selectedChitId ? "chit-card selected" : "chit-card"} key={chit.id} onClick={() => setSelectedChitId(chit.id)} role="button" tabIndex={0}>
-                                    <div className="chit-card-top">
-                                        <div className="chit-avatar">
-                                            {chit.name.slice(0, 1).toUpperCase()}
-                                        </div>
-                                        <span className="status active">Active</span>
-                                    </div>
-                                    <strong>{chit.name}</strong>
-                                    <div className="chit-card-meta">
-                                        <span>{chit.chitId}</span>
-                                        <span>{chit.memberCount} members</span>
-                                        <span>Agent {chit.agentPercentage}%</span>
-                                    </div>
-                                    <div className="progress">
-                                        <span style={{ width: "12%" }} />
-                                    </div>
-                                    <div className="card-actions">
-                                        <button onClick={() => { setEditingChit(chit); setFormMemberCount(String(chit.memberCount)); setFormInstallmentAmount(String(chit.monthlyInstallment)); setShowChit(true); }} aria-label={`Edit ${chit.name}`}><Pencil size={14} />Edit</button>
-                                        <button onClick={() => deleteChit(chit)} aria-label={`Delete ${chit.name}`}><Trash2 size={14} />Delete</button>
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="empty-state">No chits created yet.</div>
-                        )}
-                    </section>
                     <section className="panel chit-detail">
                         <div className="detail-title">
                             <div>
@@ -983,12 +955,6 @@ function ChitManager() {
                             <h3>Member directory</h3>
                             <p>{members.length} onboarded members</p>
                         </div>
-                        <label className="member-filter">
-                            <span>Chit</span>
-                            <select value={selectedChitId} onChange={(event) => setSelectedChitId(event.target.value)}>
-                                {chits.map((chit) => <option value={chit.id} key={chit.id}>{chit.name}</option>)}
-                            </select>
-                        </label>
                     </div>
                     {members.length ? (
                         members.map((member) => (
