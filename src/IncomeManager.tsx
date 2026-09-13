@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus } from "lucide-react";
 import { FeedbackPopup, Modal } from "./InstallmentModal";
+import { getAuthRoleFromToken } from "./auth";
 
 type Income = {
     id: string;
@@ -19,6 +20,7 @@ const money = (value: number) => new Intl.NumberFormat("en-IN", {
 
 export default function IncomeManager({ chitId }: { chitId: string }) {
     const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+    const isMemberRole = getAuthRoleFromToken() === "MEMBER";
     const [history, setHistory] = useState<Income[]>([]);
     const [incomeAmount, setIncomeAmount] = useState(0);
     const [editing, setEditing] = useState<Income | null>(null);
@@ -75,7 +77,7 @@ export default function IncomeManager({ chitId }: { chitId: string }) {
         {!error && success && <FeedbackPopup message={success} type="success" close={() => setSuccess("")} />}
         <div className="page-heading">
             <div><p className="section-kicker">INCOME TRACKER</p><h2>Income history</h2></div>
-            <button className="primary-button" onClick={() => { setEditing(null); setFormPercentage(0); setFormMonths(1); setShowForm(true); }}><Plus size={17} />Add income</button>
+            {!isMemberRole && <button className="primary-button" onClick={() => { setEditing(null); setFormPercentage(0); setFormMonths(1); setShowForm(true); }}><Plus size={17} />Add income</button>}
         </div>
         <section className="panel income-panel">
             {history.length ? history.map((income) => <div className="income-row" key={income.id}>
@@ -83,7 +85,7 @@ export default function IncomeManager({ chitId }: { chitId: string }) {
                 <div><span>Interest earned</span><strong>{money(income.interestEarnedAmount)}</strong></div>
                 <div><span>Created</span><strong>{new Date(income.createdAt).toLocaleDateString("en-IN")}</strong></div>
                 <span className={income.active ? "status active" : "status"}>{income.active ? "Active" : "Deleted"}</span>
-                {income.active && <button className="icon-button" onClick={() => { setEditing(income); setFormPercentage(income.percentage); setFormMonths(income.numberOfMonths); setShowForm(true); }} aria-label="Edit active income"><Pencil size={15} /></button>}
+                {!isMemberRole && income.active && <button className="icon-button" onClick={() => { setEditing(income); setFormPercentage(income.percentage); setFormMonths(income.numberOfMonths); setShowForm(true); }} aria-label="Edit active income"><Pencil size={15} /></button>}
             </div>) : <div className="empty-state">No income records for this chit.</div>}
         </section>
         {showForm && <Modal title={editing ? "Edit income" : "Add income"} close={() => { setShowForm(false); setEditing(null); }}>

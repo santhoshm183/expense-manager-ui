@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Gavel, Pencil, Plus } from "lucide-react";
 import { FeedbackPopup, Modal } from "./InstallmentModal";
+import { getAuthRoleFromToken } from "./auth";
 
 type Chit = { id: string; name: string };
 type Member = {
@@ -33,6 +34,7 @@ const money = (value: number) =>
 
 export default function AuctionManager({ initialChitId }: { initialChitId: string }) {
     const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+    const isMemberRole = getAuthRoleFromToken() === "MEMBER";
     const [chits, setChits] = useState<Chit[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
     const [auctions, setAuctions] = useState<Auction[]>([]);
@@ -132,7 +134,7 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                     <p className="section-kicker">MONTHLY AUCTION SYSTEM</p>
                     <h2>Auctions</h2>
                 </div>
-                <div className="heading-controls">
+                {!isMemberRole && <div className="heading-controls">
                     <button
                         className="primary-button"
                         onClick={() => {
@@ -146,7 +148,7 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                         <Plus size={17} />
                         Add auction
                     </button>
-                </div>
+                </div>}
             </div>
             <section className="panel auction-panel">
                 <div className="panel-heading">
@@ -177,7 +179,7 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                             <span className={auction.handType === "ExtrHand" ? "status active" : "status"}>
                                 {auction.handType}
                             </span>
-                            <div className="row-actions">
+                            {!isMemberRole && <div className="row-actions">
                                 <button
                                     onClick={() => {
                                         setEditing(auction);
@@ -190,7 +192,7 @@ export default function AuctionManager({ initialChitId }: { initialChitId: strin
                                 >
                                     <Pencil size={14} />
                                 </button>
-                            </div>
+                            </div>}
                         </div>
                     ))
                 ) : (

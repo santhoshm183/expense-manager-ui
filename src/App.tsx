@@ -23,6 +23,14 @@ import InstallmentManager from "./InstallmentManager";
 import AuctionManager from "./AuctionManager";
 import IncomeManager from "./IncomeManager";
 import { FeedbackPopup } from "./InstallmentModal";
+import {
+    AuthSession,
+    clearStoredAuth,
+    getAuthMemberIdFromToken,
+    getAuthRoleFromToken,
+    getStoredAuth,
+    saveStoredAuth,
+} from "./auth";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -90,9 +98,14 @@ const monthLabel = (month: string) =>
         new Date(`${month}-01T00:00:00`),
     );
 const today = new Date().toISOString().slice(0, 10);
-const apiUrl = `${import.meta.env.VITE_API_URL || "http://localhost:8080/api"}/transactions`;
+const apiBaseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+const apiUrl = `${apiBaseUrl}/transactions`;
 
 export default function App() {
+    const [session, setSession] = useState<AuthSession | null>(() => getStoredAuth());
+    const currentRole = getAuthRoleFromToken();
+    const isMemberRole = currentRole === "MEMBER";
+    const currentMemberId = getAuthMemberIdFromToken();
     const [month, setMonth] = useState("2026-08");
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
@@ -105,6 +118,19 @@ export default function App() {
     const [menuOpen, setMenuOpen] = useState(false);
 
     useEffect(() => {
+        const handleAuthExpired = () => {
+            clearStoredAuth();
+            setSession(null);
+        };
+        window.addEventListener("auth:expired", handleAuthExpired);
+        return () => window.removeEventListener("auth:expired", handleAuthExpired);
+    }, []);
+
+    useEffect(() => {
+        if (!session) {
+            setLoading(false);
+            return;
+        }
         fetch(apiUrl)
             .then((response) => {
                 if (!response.ok) throw new Error("Unable to load transactions");
@@ -116,7 +142,7 @@ export default function App() {
                 setTransactions([]);
             })
             .finally(() => setLoading(false));
-    }, []);
+    }, [session]);
 
     const current = useMemo(
         () => transactions.filter((item) => item.date.startsWith(month)),
@@ -215,6 +241,10 @@ export default function App() {
         setShowForm(true);
     }
 
+    if (!session) {
+        return <LoginScreen onAuthenticated={setSession} />;
+    }
+
     return (
         <div className="app-shell">
             <aside className="sidebar">
@@ -267,6 +297,16 @@ export default function App() {
                             <span>3</span>
                         </span>
                         <div className="avatar">S</div>
+                        <button
+                            className="secondary-button"
+                            onClick={() => {
+                                clearStoredAuth();
+                                setSession(null);
+                            }}
+                            type="button"
+                        >
+                            Logout
+                        </button>
                     </div>
                 </header>
                 <div className="page">
@@ -310,10 +350,12 @@ export default function App() {
                                         <Download size={16} />
                                         Export
                                     </button>
-                                    <button className="primary-button" onClick={openNew}>
-                                        <Plus size={17} />
-                                        Add transaction
-                                    </button>
+                                    {!isMemberRole && (
+                                        <button className="primary-button" onClick={openNew}>
+                                            <Plus size={17} />
+                                            Add transaction
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                             <section className="summary-grid">
@@ -353,13 +395,15 @@ export default function App() {
                                                     : `${current.length} entries this month`}
                                             </p>
                                         </div>
-                                        <button
-                                            className="icon-button"
-                                            onClick={openNew}
-                                            aria-label="Add transaction"
-                                        >
-                                            <CirclePlus size={20} />
-                                        </button>
+                                        {!isMemberRole && (
+                                            <button
+                                                className="icon-button"
+                                                onClick={openNew}
+                                                aria-label="Add transaction"
+                                            >
+                                                <CirclePlus size={20} />
+                                            </button>
+                                        )}
                                     </div>
                                     <div className="transaction-list">
                                         {current.length ? (
@@ -367,6 +411,7 @@ export default function App() {
                                                 <Row
                                                     key={item.id}
                                                     item={item}
+                                                    readOnly={isMemberRole}
                                                     edit={() => {
                                                         setEditing(item);
                                                         setShowForm(true);
@@ -512,6 +557,158 @@ export default function App() {
     );
 }
 
+function LoginScreen({ onAuthenticated }: { onAuthenticated: (session: AuthSession) => void }) {
+    const [mode, setMode] = useState<"login" | "admin">("login");
+    const [username, setUsername] = useState("");
+    const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
+    const [message, setMessage] = useState("");
+    const [loading, setLoading] = useState(false);
+
+    async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+        event.preventDefault();
+        setError("");
+        setMessage("");
+        setLoading(true);
+
+        try {
+            if (mode === "admin") {
+                const response = await fetch(`${apiBaseUrl}/auth/users`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        username: username.trim(),
+                        password,
+                        role: "ADMIN",
+                    }),
+                });
+
+                if (!response.ok) {
+                    let fallback = "Could not create the admin account.";
+                    try {
+                        const body = await response.json();
+                        if (typeof body.message === "string") fallback = body.message;
+                    } catch {
+                        // Ignore malformed error payloads and keep the fallback message.
+                    }
+                    throw new Error(fallback);
+                }
+
+                setMode("login");
+                setMessage("Admin account created successfully. Please sign in.");
+                setPassword("");
+                return;
+            }
+
+            const response = await fetch(`${apiBaseUrl}/auth/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    username: username.trim(),
+                    password,
+                }),
+            });
+
+            if (!response.ok) {
+                let fallback = "Invalid username or password.";
+                try {
+                    const body = await response.json();
+                    if (typeof body.message === "string") fallback = body.message;
+                } catch {
+                    // Ignore malformed error payloads and keep the fallback message.
+                }
+                throw new Error(fallback);
+            }
+
+            const session = (await response.json()) as AuthSession;
+            saveStoredAuth(session);
+            onAuthenticated(session);
+        } catch (caughtError) {
+            setError(caughtError instanceof Error ? caughtError.message : "Something went wrong.");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    return (
+        <div className="login-shell">
+            <div className="login-card">
+                <div className="brand login-brand">
+                    <div className="brand-mark">
+                        <WalletCards size={20} />
+                    </div>
+                    <span>ledgerly</span>
+                </div>
+                <p className="login-kicker">SECURE ACCESS</p>
+                <h2>{mode === "login" ? "Welcome back" : "Create admin account"}</h2>
+
+                <div className="login-tabs" aria-label="Authentication mode">
+                    <button
+                        type="button"
+                        className={mode === "login" ? "login-tab active" : "login-tab"}
+                        onClick={() => {
+                            setMode("login");
+                            setError("");
+                            setMessage("");
+                        }}
+                    >
+                        Sign in
+                    </button>
+                    <button
+                        type="button"
+                        className={mode === "admin" ? "login-tab active" : "login-tab"}
+                        onClick={() => {
+                            setMode("admin");
+                            setError("");
+                            setMessage("");
+                        }}
+                    >
+                        Create admin
+                    </button>
+                </div>
+
+                {error && <div className="login-message error">{error}</div>}
+                {message && <div className="login-message success">{message}</div>}
+
+                <form className="form login-form" onSubmit={handleSubmit}>
+                    <label>
+                        Username
+                        <input
+                            name="username"
+                            autoComplete="username"
+                            value={username}
+                            onChange={(event) => setUsername(event.target.value)}
+                            placeholder="Enter your username"
+                            required
+                        />
+                    </label>
+                    <label>
+                        Password
+                        <input
+                            name="password"
+                            type="password"
+                            autoComplete={mode === "login" ? "current-password" : "new-password"}
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
+                            placeholder={mode === "login" ? "Enter your password" : "Choose a secure password"}
+                            required
+                        />
+                    </label>
+                    <button className="primary-button submit-button" type="submit" disabled={loading}>
+                        {loading
+                            ? mode === "login"
+                                ? "Signing in..."
+                                : "Creating admin..."
+                            : mode === "login"
+                                ? "Sign in"
+                                : "Create admin"}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+}
+
 function normalize(item: ApiTransaction): Transaction {
     return {
         id: item.id,
@@ -565,10 +762,12 @@ function Card({
 }
 function Row({
     item,
+    readOnly,
     edit,
     remove,
 }: {
     item: Transaction;
+    readOnly: boolean;
     edit: () => void;
     remove: () => void;
 }) {
@@ -597,14 +796,16 @@ function Row({
                 {item.type === "income" ? "+" : "-"}
                 {money(item.amount)}
             </strong>
-            <div className="row-actions">
-                <button onClick={edit} aria-label={`Edit ${item.description}`}>
-                    <Pencil size={15} />
-                </button>
-                <button onClick={remove} aria-label={`Delete ${item.description}`}>
-                    <Trash2 size={15} />
-                </button>
-            </div>
+            {!readOnly && (
+                <div className="row-actions">
+                    <button onClick={edit} aria-label={`Edit ${item.description}`}>
+                        <Pencil size={15} />
+                    </button>
+                    <button onClick={remove} aria-label={`Delete ${item.description}`}>
+                        <Trash2 size={15} />
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
@@ -637,6 +838,9 @@ function Modal({
 
 function ChitManager({ tab }: { tab: ChitTab }) {
     const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+    const currentRole = getAuthRoleFromToken();
+    const isMemberRole = currentRole === "MEMBER";
+    const currentMemberId = getAuthMemberIdFromToken();
     const [chits, setChits] = useState<Chit[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
     const [showChit, setShowChit] = useState(false);
@@ -651,11 +855,36 @@ function ChitManager({ tab }: { tab: ChitTab }) {
     const [formInstallmentAmount, setFormInstallmentAmount] = useState("");
     const [exporting, setExporting] = useState(false);
     useEffect(() => {
-        fetch(`${baseUrl}/chits`)
-            .then((response) => { if (!response.ok) throw new Error(); return response.json(); })
-            .then(setChits)
-            .catch(() => setError("Could not connect to the Chit Manager API."));
-    }, []);
+        async function loadChits() {
+            try {
+                const chitsResponse = await fetch(`${baseUrl}/chits`);
+                if (!chitsResponse.ok) throw new Error();
+                const allChits = (await chitsResponse.json()) as Chit[];
+
+                if (isMemberRole && currentMemberId) {
+                    const membersResponse = await fetch(`${baseUrl}/members`);
+                    if (!membersResponse.ok) throw new Error();
+                    const allMembers = (await membersResponse.json()) as Member[];
+                    const currentMember = allMembers.find((member) => member.id === currentMemberId);
+                    const currentMemberChitId = currentMember?.chit?.id;
+                    const visibleChits = currentMemberChitId
+                        ? allChits.filter((chit) => chit.id === currentMemberChitId)
+                        : [];
+                    setChits(visibleChits);
+                    if (visibleChits.length && !selectedChitId) {
+                        setSelectedChitId(visibleChits[0].id);
+                    }
+                    return;
+                }
+
+                setChits(allChits);
+            } catch {
+                setError("Could not connect to the Chit Manager API.");
+            }
+        }
+
+        loadChits();
+    }, [baseUrl, currentMemberId, isMemberRole]);
     useEffect(() => {
         if (!selectedChitId && chits.length) setSelectedChitId(chits[0].id);
     }, [chits, selectedChitId]);
@@ -732,6 +961,8 @@ function ChitManager({ tab }: { tab: ChitTab }) {
                 body: JSON.stringify({
                     ...data,
                     chitId: String(data.chitId),
+                    username: data.username ? String(data.username).trim() : "",
+                    password: data.password ? String(data.password) : "",
                 }),
             },
         );
@@ -879,10 +1110,12 @@ function ChitManager({ tab }: { tab: ChitTab }) {
                                 <Download size={16} />
                                 {exporting ? "Preparing..." : "Export PDF"}
                             </button>
-                            <button className="primary-button" onClick={() => { setEditingChit(null); setFormMemberCount(""); setFormInstallmentAmount(""); setShowChit(true); }}>
-                                <Plus size={17} />
-                                Create chit
-                            </button>
+                            {!isMemberRole && (
+                                <button className="primary-button" onClick={() => { setEditingChit(null); setFormMemberCount(""); setFormInstallmentAmount(""); setShowChit(true); }}>
+                                    <Plus size={17} />
+                                    Create chit
+                                </button>
+                            )}
                         </div>
                     </div>
                     <div className="summary-grid">
@@ -899,10 +1132,12 @@ function ChitManager({ tab }: { tab: ChitTab }) {
                         <p className="section-kicker">CHIT MEMBERS</p>
                         <h2>Member module</h2>
                     </div>
-                    <button className="primary-button" onClick={() => { setEditingMember(null); setShowMember(true); setError(""); }}>
-                        <Users size={16} />
-                        Add member
-                    </button>
+                    {!isMemberRole && (
+                        <button className="primary-button" onClick={() => { setEditingMember(null); setShowMember(true); setError(""); }}>
+                            <Users size={16} />
+                            Add member
+                        </button>
+                    )}
                 </div>
             )}
             {tab === "overview" ? (
@@ -958,7 +1193,19 @@ function ChitManager({ tab }: { tab: ChitTab }) {
                     </div>
                     {members.length ? (
                         members.map((member) => (
-                            <div className="person-row member-row-button" key={member.id} onClick={() => { setEditingMember(member); setShowMember(true); setError(""); }} role="button" tabIndex={0}>
+                            <div
+                                className="person-row member-row-button"
+                                key={member.id}
+                                onClick={() => {
+                                    if (!isMemberRole) {
+                                        setEditingMember(member);
+                                        setShowMember(true);
+                                        setError("");
+                                    }
+                                }}
+                                role={isMemberRole ? undefined : "button"}
+                                tabIndex={isMemberRole ? undefined : 0}
+                            >
                                 <div className="person-avatar">
                                     {member.name.slice(0, 1).toUpperCase()}
                                 </div>
@@ -971,7 +1218,9 @@ function ChitManager({ tab }: { tab: ChitTab }) {
                                 </div>
                                 <span className="member-state">{member.chit?.name || "Chit member"}</span>
                                 <span className={member.chitTaken ? "status active" : "status"}>{member.chitTaken ? "Taken" : "Not taken"}</span>
-                                <span className="member-actions"><button type="button" onClick={(event) => { event.stopPropagation(); deleteMember(member); }} aria-label={`Delete ${member.name}`}><Trash2 size={14} /></button></span>
+                                {!isMemberRole && (
+                                    <span className="member-actions"><button type="button" onClick={(event) => { event.stopPropagation(); deleteMember(member); }} aria-label={`Delete ${member.name}`}><Trash2 size={14} /></button></span>
+                                )}
                             </div>
                         ))
                     ) : (
@@ -1048,6 +1297,14 @@ function ChitManager({ tab }: { tab: ChitTab }) {
                         <label>
                             Permanent address
                             <textarea name="permanentAddress" rows={3} defaultValue={editingMember?.permanentAddress || ""} />
+                        </label>
+                        <label>
+                            Username
+                            <input name="username" defaultValue="" placeholder="Optional member login username" />
+                        </label>
+                        <label>
+                            Password
+                            <input name="password" type="password" defaultValue="" placeholder="Optional member login password" />
                         </label>
                         <button className="primary-button submit-button" type="submit">
                             {editingMember ? "Save member" : "Add member"}
